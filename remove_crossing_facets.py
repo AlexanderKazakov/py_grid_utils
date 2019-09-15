@@ -15,8 +15,11 @@ locator.BuildLocator()
 grid_points, grid_cells, _ = convertVtkGridToNumpy(grid)
 cells_neighbors = find_cells_neighbors(grid_cells)
 border_cells_ids = np.where(np.any(cells_neighbors == -1, axis=1))[0]
-border_cells_ids = set(border_cells_ids)
+for i in range(5):
+    border_cells_neighbors = np.unique(cells_neighbors[border_cells_ids].flatten())[1:]
+    border_cells_ids = np.unique(np.r_[border_cells_ids, border_cells_neighbors])
 
+border_cells_ids = set(border_cells_ids)
 point_ids_to_exclude = []
 for point_id in range(len(points)):
     cell_in_grid = locator.FindCell(points[point_id])

@@ -5,12 +5,15 @@ import meshio
 import networkx as nx
 
 
+assert vtk.VTK_MAJOR_VERSION > 5
+
+
 def constructVtkGrid(points, cells, cell_info=None, point_info=None):
     grid = vtk.vtkUnstructuredGrid()
     grid.Allocate(cells.shape[0])
     cell_size = cells.shape[1]
     if cell_size == 4:
-        cell_type = vtk.vtkTetra
+        cell_type = vtk.VTK_TETRA
     elif cell_size == 3:
         cell_type = vtk.VTK_TRIANGLE
     else:
@@ -98,23 +101,36 @@ def showVtkGrid(ugrid):
     iren.Start()
 
 
-def convertVtkGridToNumpy(grid):
+def convertVtkGridToNumpy(grid, n_points_in_cell=None):
     num_cells = grid.GetNumberOfCells()
     num_points = grid.GetNumberOfPoints()
     points = np.zeros((num_points, 3), dtype=np.float64)
     for cnt in range(num_points):
         points[cnt, :] = grid.GetPoint(cnt)
-    n_points_in_cell = grid.GetCell(0).GetNumberOfPoints()
-    print('n_points_in_cell:', n_points_in_cell)
+    if n_points_in_cell is None:
+        n_points_in_cell = grid.GetCell(0).GetNumberOfPoints()
+    print('Choose only cells with n_points_in_cell ==', n_points_in_cell)
 
     cells = np.zeros((num_cells, n_points_in_cell), dtype=np.int64)
+    unexpected_numbers_of_points_in_cell = dict()
+    valid_cell_ids = []
     for cnt in range(num_cells):
-        assert grid.GetCell(cnt).GetNumberOfPoints() == n_points_in_cell
-        if grid.GetCell(cnt).GetNumberOfPoints() == n_points_in_cell:
+        n_points_curr = grid.GetCell(cnt).GetNumberOfPoints()
+        if n_points_curr == n_points_in_cell:
             cells[cnt, :] = [grid.GetCell(cnt).GetPointId(i) for i in range(n_points_in_cell)]
+            valid_cell_ids.append(cnt)
+        else:
+            if unexpected_numbers_of_points_in_cell.get(n_points_curr) is None:
+                unexpected_numbers_of_points_in_cell[n_points_curr] = 1
+            else:
+                unexpected_numbers_of_points_in_cell[n_points_curr] += 1
+    if len(unexpected_numbers_of_points_in_cell) != 0:
+        print('Warning: ignored cells with different number of points:', unexpected_numbers_of_points_in_cell)
     cells = np.delete(cells, np.where(np.all(cells == 0, axis=1))[0], axis=0)
 
-    assert grid.GetPointData().GetNumberOfArrays() == 0, 'TODO'
+    if grid.GetPointData().GetNumberOfArrays() != 0:
+        print('Warning: point data is currently ignored')
+
     cell_info_arrs = []
     for i in range(grid.GetCellData().GetNumberOfArrays()):
         arr = grid.GetCellData().GetArray(i)
@@ -128,6 +144,10 @@ def convertVtkGridToNumpy(grid):
         for cnt in range(num_cells):
             data[cnt] = arr.GetValue(cnt)
         cell_info_arrs.append(data)
+
+    valid_cell_ids = np.array(valid_cell_ids, np.int64)
+    cell_info_arrs = [arr[valid_cell_ids] for arr in cell_info_arrs]
+
     return points, cells, cell_info_arrs
 
 
@@ -198,6 +218,8 @@ def grid_quality(points, cells):
     plt.ylabel("aspect ratio")
     plt.grid(True)
     plt.show()
+
+    return minimal_height, asp_ratio
 
 
 def surface_quality(points, cells, draw_picture=False):
@@ -454,4 +476,97 @@ def choose_only_big_connected_components(facets):
     facets = facets[new_facets_ids]
     print(np.histogram([len(n) for e, n in construct_edges(facets).items()], 6, (0, 6)))
     return facets
+
+
+def write_vti(img, filename):
+    imageData = vtk.vtkImageData()
+    imageData.SetDimensions(img.shape[0], img.shape[1], img.shape[2])
+    imageData.AllocateScalars(vtk.VTK_UNSIGNED_CHAR, 1)
+    for z in range(img.shape[2]):
+        for y in range(img.shape[1]):
+            for x in range(img.shape[0]):
+                imageData.SetScalarComponentFromDouble(x, y, z, 0, img[x, y, z])
+    writer = vtk.vtkXMLImageDataWriter()
+    writer.SetFileName(filename)
+    writer.SetInputData(imageData)
+    writer.Write()
+
+
+def read_vti(filename):
+    reader = vtk.vtkXMLImageDataReader()
+    reader.SetFileName(filename)
+    reader.Update()
+    imageData = reader.GetOutput()
+    assert imageData.GetNumberOfScalarComponents() == 1
+    img = np.zeros(imageData.GetDimensions(), np.uint8)
+    for z in range(img.shape[2]):
+        for y in range(img.shape[1]):
+            for x in range(img.shape[0]):
+                img[x, y, z] = imageData.GetScalarComponentAsDouble(x, y, z, 0)
+    return img
+
+
+def write_inrimage(img, filename, hx=None, hy=None, hz=None):
+    if hx is None:
+        hx = 1
+    if hy is None:
+        hy = hx
+    if hz is None:
+        hz = hy
+
+# see http://inrimage.gforge.inria.fr/WWW/Inrimage.1i.html#T_DEFINITION_D'UNE_IMAGE
+    header = """#INRIMAGE-4#{{
+XDIM={}
+YDIM={}
+ZDIM={}
+VDIM={}
+TYPE=unsigned fixed
+PIXSIZE=8 bits
+SCALE=2**0
+CPU=decm
+VX={}
+VY={}
+VZ={}
+#GEOMETRY=CARTESIAN
+"""
+    header_end = '##}\n'
+
+    header = header.format(img.shape[0], img.shape[1], img.shape[2], 1, hx, hy, hz)
+    header += '\n' * (256 - len(header) - len(header_end)) + header_end
+    assert len(header) == 256
+
+    assert img.dtype == np.uint8
+    img_bytes = img.tostring(order='F')
+    data = bytes(header, 'ascii') + img_bytes
+
+    with open(filename, 'wb') as f:
+        f.write(data)
+
+
+def sphere(r):
+    x, y, z = np.ogrid[-r:r + 1, -r:r + 1, -r:r + 1]
+    return (x ** 2 + y ** 2 + z ** 2 <= r ** 2).astype(np.uint8)
+
+
+def one_hot(img):
+    labels = np.unique(img.flatten())
+    num_labels = len(labels)
+    assert np.all(labels == np.arange(num_labels))
+    res = np.zeros(tuple(list(img.shape) + [num_labels]), dtype=np.int32)
+    for label in labels:
+        res[img == label, label] = 1
+    return res
+
+
+
+
+
+
+
+
+
+
+
+
+
 

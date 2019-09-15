@@ -1,35 +1,26 @@
 from utils import *
 
 
-# best found params for cube with side 100 (min / median = 0.195):
-# tetgen.exe -p -q2/15 -a1.0 -k -V "C:\DATA\Programs\tetgen\cube.poly"
-
-# points, cells = readInmGrid("grids/mesh-coarse.out")
-# materials = cells[:, -1]
-# cells = cells[:, :-1]
-# for m in np.unique(materials):
-#     plotMinHeightHistogram(points, cells[materials == m])
-
-# vtk_grid = readVtkGrid("grids/result.vtk")
-# points, cells, materials = convertVtkGridToNumpy(vtk_grid)
-# plotMinHeightHistogram(points, cells[materials[:, 0] != 0])
-
-# fname = r"grids/mesh_initial.vtk"
-# fname = r"C:\DATA\Programs\SALOME-9.2.2\SAMPLES\Mesh_1.vtk"
-# fname = r"C:\DATA\Programs\SALOME-9.2.2\SAMPLES\Bone_mesh.vtk"
-fname = r"grids/surfaces.1.vtk"
+fname = 'grids/results/9_percent/skull.vtk'
 vtk_grid = readVtkGrid(fname)
-points, cells = convertVtkGridToNumpy(vtk_grid)
-grid_quality(points, cells)
+points, cells, materials = convertVtkGridToNumpy(vtk_grid, 4)
+materials = materials[0]
+min_height, asp_ratio = grid_quality(points, cells)
 
+writeVtkGrid(constructVtkGrid(points, cells, {
+    'material': ('int', materials),
+    'log10_min_h': ('float', np.log10(min_height)),
+    'asp_ratio': ('float', asp_ratio),
+}), 'grids/res.vtk')
 
-# vtk_grid = readVtkGrid(r"grids/mesh_initial.vtk")
-# points, cells, materials = convertVtkGridToNumpy(vtk_grid)
-# bound_facets = findBoundFacets(np.c_[cells, materials])
-# surface_quality(points, bound_facets[:, :-1])
-
-# !!! 0.043 h -- C:\DATA\Programs\tetgen\build_dir\Release\tetgen.exe -p -q2/15 -Y -k -V "C:\Users\alex\PycharmProjects\untitled\grids\surfaces.stl"
-
+bound_facets = findBoundFacets(np.c_[cells, materials])
+different_material = np.where(np.all(np.diff(bound_facets[:, :-1], axis=0) == 0, axis=1))[0]
+bound_facets = np.delete(bound_facets, different_material, axis=0)
+bound_facets = bound_facets[:, :-1]
+new_points, new_facets = remove_unused_points(points, bound_facets)
+surface_grid = constructVtkGrid(points, bound_facets)
+writeVtkGrid(surface_grid, "grids/surfaces.vtk")
+to_stl('grids/surfaces.vtk')
 
 
 

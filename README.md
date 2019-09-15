@@ -20,8 +20,10 @@ file *.stl for tetgen must be a closed surface
  -- fill all the holes in a surface to make it closed surface
  - https://doc.cgal.org/latest/Polygon_mesh_processing/index.html#RemeshingExample_1
  -- remesh the surface -- make more homogeneous triangles, improve quality
+ - https://doc.cgal.org/latest/Mesh_3/index.html#title25
+ -- create mesh from 3D-image
  
-For remeshing, surface *.off file for CGAL must be oriented, see ```orient_facets``` function
+For surface remeshing, surface *.off file for CGAL must be oriented, see ```orient_facets``` function in utils
 
 #### My scripts:
 - utils.py -- some useful functions to work with grids in python
@@ -32,3 +34,8 @@ For remeshing, surface *.off file for CGAL must be oriented, see ```orient_facet
 - refine_surfaces.py, extract_connected_components.py -- struggling to improve quality of skull mesh
 - grid2surfaces.py -- extract surfaces that split one material from another, 
 i.e for 3 materials there will be 6 surfaces (count outer space as material -1) 
+- grid2img.py -- convert a mesh to 3D image
+- clear_initial_grid.py -- replace small connected components of materials in a mesh
+- correct_3d_image.py -- smoothing 3D image 
+
+
