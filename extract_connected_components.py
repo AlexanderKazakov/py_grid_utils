@@ -44,6 +44,10 @@ remove_comments("grids/skull.off")
 # ps, cs, _ = convertVtkGridToNumpy(readVtkGrid("grids/skull.1.vtk"))
 # grid_quality(ps, cs)
 
+# p = np.array([[0, 0, 0], [1, 1, 1], [2, 2, 2]])
+# c = np.array([[0, 1, 2]])
+# d = np.array([-1e+4, 0, 1e+4])
+# meshio.write_points_cells('grids/tmp.vtk', p, {'triangle': c}, {'pressure': d})
 
 
 

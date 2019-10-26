@@ -168,7 +168,7 @@ def readInmGrid(filename):
     return points, cells
 
 
-def findBoundFacets(cells):
+def find_border_and_contact_facets(cells):
     facets = np.vstack([cells[:, 1:],
                         np.hstack([cells[:, :1], cells[:, 2:]]),
                         np.hstack([cells[:, :2], cells[:, 3:]]),
@@ -180,17 +180,28 @@ def findBoundFacets(cells):
     # find facets which do not bound materials
     same_material = np.where(np.all(np.diff(facets, axis=0) == 0, axis=1))[0]
     bound_facets = np.delete(facets, np.c_[same_material, same_material + 1], axis=0)
-    # split border from contact facets
-    # different_material = np.where(np.all(np.diff(bound_facets[:, :-1], axis=0) == 0, axis=1))[0]
-    # contact_facets = bound_facets[np.c_[different_material, different_material + 1]]
-    # border_facets = np.delete(bound_facets, np.c_[different_material, different_material + 1], axis=0)
+    # to split border from contact facets, see find_border_facets
     return bound_facets
+
+
+def find_border_facets(cells):
+    bound_facets = find_border_and_contact_facets(cells)
+    different_material = np.where(np.all(np.diff(bound_facets[:, :-1], axis=0) == 0, axis=1))[0]
+    # contact_facets = bound_facets[np.c_[different_material, different_material + 1]]
+    border_facets = np.delete(bound_facets, np.c_[different_material, different_material + 1], axis=0)
+    return border_facets
 
 
 def grid_quality(points, cells):
     c = points[cells]
     r = np.stack([c[:, 1, :] - c[:, 0, :], c[:, 2, :] - c[:, 0, :], c[:, 3, :] - c[:, 0, :]], axis=1)
+
     vol = np.abs(np.linalg.det(r)) / 6
+    vol_3 = np.power(vol, 1 / 3)
+    print('min / median (vol^(1/3)) =', np.min(vol_3), '/', np.median(vol_3), '=', np.min(vol_3) / np.median(vol_3))
+    plt.hist(vol_3, 100)
+    plt.show()
+
     areas = []
     for cnt in range(4):
         i, j, k = tuple(np.delete(np.arange(4, dtype=np.int64), cnt))
@@ -199,6 +210,8 @@ def grid_quality(points, cells):
     minimal_height = 3 * vol / max_side_area
     print('min / median (minimal height) =', np.min(minimal_height), '/', np.median(minimal_height), '=',
           np.min(minimal_height) / np.median(minimal_height))
+    plt.hist(minimal_height, 100)
+    plt.show()
 
     longest_edge = []
     for i in range(4):

@@ -15,7 +15,7 @@ def construct_surfaces_simple(bound_facets):
 points, cells, materials = convertVtkGridToNumpy(readVtkGrid('grids/big_conn_comps.vtk'))
 materials = materials[0]
 cells = np.c_[cells, materials]
-bound_facets = findBoundFacets(cells)
+bound_facets = find_border_and_contact_facets(cells)
 
 # convert bound facets: for each bound facet two materials which it divides
 diff_materials_second_id = np.all(np.diff(bound_facets[:, :-1], axis=0) == 0, axis=1)

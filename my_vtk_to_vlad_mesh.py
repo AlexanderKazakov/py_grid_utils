@@ -1,96 +1,88 @@
-import numpy as np
-import re
+from utils import *
 
-with open('grids/results/grid_with_materials.vtk', 'r') as f:
-    lines = f.readlines()
+# cube:
+vtk_grid = meshio.read('grids/initial/cube.1.vtk')
+points = vtk_grid.points
+cells = vtk_grid.cells['tetra']
+materials = np.zeros(cells.shape[0], np.uint8)
+out_name = 'cube'
+r = 0.25
+r0 = np.array([0.5, 0.5, 0])
 
-for line_cntr in range(len(lines)):
-    match = re.search(r'\s*POINTS\s+(\d+)\s+double\s*', lines[line_cntr])
-    if match is not None:
-        num_points = int(match.group(1))
-        break
-print('Number of points:', num_points)
+# skull8:
+# vtk_grid = meshio.read('grids/skull8.vtk')
+# points = vtk_grid.points
+# cells = vtk_grid.cells['tetra']
+# materials = vtk_grid.cell_data['tetra']['material']
+# out_name = 'skull8'
+# r = 0.12
+# r0 = np.array([0.8, 0.7, 0.75])
 
-points = []
-for line_cntr in range(line_cntr + 1, len(lines)):
-    match = re.search(r'\s*CELLS\s+(\d+)\s+\d+\s*', lines[line_cntr])
-    if match is None:
-        points.extend([float(v) for v in lines[line_cntr].split()])
-    else:
-        num_cells = int(match.group(1))
-        break
+# skull:
+# vtk_grid = meshio.read('grids/results/9_percent/skull.vtk')
+# points = vtk_grid.points
+# cells = vtk_grid.cells['tetra']
+# materials = vtk_grid.cell_data['tetra']['material']
+# out_name = 'skull'
+# r = 0.12
+# r0 = np.array([0.6, 0.525, 0.7])
 
-points = np.array(points).reshape(-1, 3)
-assert points.shape[0] == num_points
-print('Number of cells:', num_cells)
-
-cells = []
-for line_cntr in range(line_cntr + 1, len(lines)):
-    match = re.search(r'\s*CELL_TYPES\s+(\d+)\s*', lines[line_cntr])
-    if match is None:
-        cells.extend([int(v) for v in lines[line_cntr].split()][1:])
-    else:
-        num_cells_types = int(match.group(1))
-        break
-
-cells = np.array(cells, dtype=np.int64).reshape(-1, 4)
-assert cells.shape[0] == num_cells == num_cells_types
-
-for line_cntr in range(line_cntr + 1, len(lines)):
-    match = re.search(r'\s*cell_info*', lines[line_cntr])
-    if match is not None:
-        break
-
-cell_ids = []
-for line_cntr in range(line_cntr + 1, len(lines)):
-    cell_ids.extend([int(v) for v in lines[line_cntr].split()])
-
-cell_ids = np.array(cell_ids, dtype=np.uint8)
-assert cell_ids.shape[0] == num_cells
-
-
-# center to zero
-points = points - points.mean(axis=0)
 print('AABB:', points.min(axis=0), points.max(axis=0), sep='\n')
 
+border_facets = find_border_facets(np.c_[cells, materials])[:, :-1]
 
-# write to Vlad's mesh
-with open('grids/results/skull.mesh', 'w') as f:
-    f.write(str(num_points) + '\n')
+# sort border facets in order to make ones with similar border condition contiguous
+bf_centers = points[border_facets].sum(axis=1) / 3
+
+# in sphere
+# bf_in_area = np.sum((bf_centers - r0) ** 2, axis=1) < r ** 2
+
+# in rectangle (for cube)
+bf_in_area = np.logical_and(np.abs(bf_centers[:, 2]) < 1e-14,
+                            np.logical_and(0.2 < bf_centers[:, 1], bf_centers[:, 1] < 0.8))
+
+border_facets = border_facets[np.argsort(bf_in_area)]
+num_bf_cond_1 = np.sum(bf_in_area)
+num_bf_cond_0 = bf_in_area.size - num_bf_cond_1
+
+# write to Vlad's mesh (see MeshIO<Space3>::LoadBoundaries)
+with open('grids/results/for_dgm/{}.mesh'.format(out_name), 'w') as f:
+    # points
+    f.write(str(points.shape[0]) + '\n')
     for p in points:
         f.write('{} {} {}\n'.format(p[0], p[1], p[2]))
-
     f.write('\n')
 
-    f.write(str(num_cells * 4) + '\n')  # note 4 !
+    # cells
+    f.write(str(cells.shape[0] * 4) + '\n')  # note 4 !
     for c in cells:
         f.write('{} {} {} {}\n'.format(c[0], c[1], c[2], c[3]))
+    f.write('\n')
 
-    f.write('0\n0\n\n0\n0\n0')
+    # contacts
+    f.write('0 0\n')
+    f.write('\n')
 
+    # borders
+    f.write(str(border_facets.shape[0]) + '\n')
+    for bf in border_facets:
+        f.write('{} {} {}\n'.format(bf[0], bf[1], bf[2]))
+    # number of different boundary conditions types,
+    # then number of faces with that condition (faces with the same condition go contiguously)
+    #
+    # for one boundary condition for all cells:
+    # f.write('1 {}\n'.format(border_facets.shape[0]))
+    # f.write('\n')
+    #
+    # for two boundary conditions:
+    f.write('2 {} {}\n'.format(num_bf_cond_0, num_bf_cond_1))
+    f.write('\n')
 
-with open('grids/results/skull.params', 'wb') as f:
-    for ci in cell_ids:
-        f.write(ci)
+    # detectors
+    f.write('0\n')
 
-
-
-# rho, lambda, mu, tau
-# жир, мышцы, мозг, кости, сосуды
-# 0.916,  1.415, 0.236, 1.585
-# 1.041,  1.968, 0.331, 0.878
-# 1.030,  1.856, 0.309, 1.293
-# 1.904,  5.891, 0.982, 0.000
-# 1.066,  2.088, 0.348, 1.288
-
-
-# <Submesh index="0" rho="0.916" lambda="1.415" mju="0.236" />
-# <Submesh index="1" rho="0.916" lambda="1.415" mju="0.236" />
-# <Submesh index="2" rho="1.041" lambda="1.968" mju="0.331" />
-# <Submesh index="3" rho="1.030" lambda="1.856" mju="0.309" />
-# <Submesh index="4" rho="1.904" lambda="5.891" mju="0.982" />
-# <Submesh index="5" rho="1.066" lambda="2.088" mju="0.348" />
-
-
+materials = materials.astype(np.uint8)
+with open('grids/results/for_dgm/{}.params'.format(out_name), 'wb') as f:
+    f.write(materials.tostring())
 
 
